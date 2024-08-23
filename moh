@@ -1,1 +1,107 @@
 
+// Step 1: Initialize colAssigned to keep track of assignments
+ClearCollect(
+    colAssigned,
+    {
+        ID: Blank(),
+        IA_Code: Blank(),
+        Target_AUM: Blank(),
+        IA_Licensing: Blank(),
+        Household_ID: Blank(),
+        Current_Total: Blank(),
+        To_IA_Code: Blank(),
+        To_IA_Name: Blank(),
+        IA_Licensing_Assigned: Blank()
+    }
+);
+
+// Step 2: Loop through each IA in colSelectedItems
+ForAll(
+    colSelectedItems,
+    // Store current IA details in local variables
+    With(
+        {
+            currentIA_ID: ID,
+            currentIA_Code: IA_Code,
+            currentTarget_AUM: Target_AUM,
+            currentIA_Licensing: IA_Licensing,
+            currentIA_Name: IA_Name
+        },
+        // Initialize a variable to track cumulative total for this IA
+        ClearCollect(colTemp, {CumulativeTotal: 0});
+
+        // Loop through unassigned household accounts
+        ForAll(
+            Filter(
+                colMySelectedIAHHLevelList,
+                IsBlank(To_IA_Code) // Only consider households that haven't been assigned yet
+            ),
+            // Calculate the new cumulative total if this household is added
+            If(
+                Sum(colTemp, CumulativeTotal) + ThisRecord.Current_Total <= currentTarget_AUM,
+                Collect(
+                    colAssigned,
+                    {
+                        ID: currentIA_ID,
+                        IA_Code: currentIA_Code,
+                        Target_AUM: currentTarget_AUM,
+                        IA_Licensing: currentIA_Licensing,
+                        Household_ID: ThisRecord.ID,
+                        Current_Total: ThisRecord.Current_Total,
+                        To_IA_Code: currentIA_Code,
+                        To_IA_Name: currentIA_Name,
+                        IA_Licensing_Assigned: currentIA_Licensing
+                    }
+                );
+
+                // Update the cumulative total for the current IA
+                Collect(
+                    colTemp,
+                    {
+                        CumulativeTotal: Sum(colTemp, CumulativeTotal) + ThisRecord.Current_Total
+                    }
+                );
+
+                // Optionally update the household entry in colMySelectedIAHHLevelList
+                Patch(
+                    colMySelectedIAHHLevelList,
+                    ThisRecord,
+                    {
+                        To_IA_Code: currentIA_Code,
+                        To_IA_Name: currentIA_Name,
+                        IA_Licensing: currentIA_Licensing
+                    }
+                );
+            )
+        )
+    )
+);
+
+// Step 3: Check for any remaining unassigned households
+ForAll(
+    Filter(colMySelectedIAHHLevelList, IsBlank(To_IA_Code)),
+    Patch(
+        colMySelectedIAHHLevelList,
+        ThisRecord,
+        {
+            To_IA_Code: Last(colSelectedItems).IA_Code,
+            To_IA_Name: Last(colSelectedItems).IA_Name,
+            IA_Licensing: Last(colSelectedItems).IA_Licensing
+        }
+    )
+);
+
+// Step 4: Loop through colAssigned and update colMySelectedIAHHLevelList
+ForAll(
+    colAssigned,
+    Patch(
+        colMySelectedIAHHLevelList,
+        LookUp(colMySelectedIAHHLevelList, ID = Household_ID),
+        {
+            To_IA_Code: To_IA_Code,
+            To_IA_Name: To_IA_Name,
+            IA_Licensing: IA_Licensing_Assigned,
+            Current_Total: Current_Total
+        }
+    )
+);
