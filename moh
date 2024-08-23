@@ -1,1 +1,91 @@
+// Step 1: Initialize colAssigned and colIATotals to keep track of assignments and running totals
+ClearCollect(
+    colAssigned,
+    {
+        ID: Blank(),
+        IA_Code: Blank(),
+        Target_AUM: Blank(),
+        IA_Licensing: Blank(),
+        Household_ID: Blank(),
+        Current_Total: Blank(),
+        To_IA_Code: Blank(),
+        To_IA_Name: Blank(),
+        IA_Licensing_Assigned: Blank()
+    }
+);
+
+// Create colIATotals to track the running total for each IA
+ClearCollect(
+    colIATotals,
+    AddColumns(
+        colSelectedItems,
+        "Running_Total", 0
+    )
+);
+
+// Step 2: Loop through each IA in colSelectedItems
+ForAll(
+    colSelectedItems,
+    // Calculate running total for current IA
+    ForAll(
+        Filter(
+            colMySelectedIAHHLevelList,
+            IsBlank(To_IA_Code) // Only consider households that haven't been assigned yet
+        ),
+        // If cumulative total with this household does not exceed Target_AUM
+        If(
+            Sum(
+                Filter(
+                    colAssigned,
+                    IA_Code = ThisRecord.IA_Code
+                ),
+                Current_Total
+            ) + ThisRecord.Current_Total <= ThisRecord.Target_AUM,
+            // Collect assignment in colAssigned
+            Collect(
+                colAssigned,
+                {
+                    ID: ThisRecord.ID,
+                    IA_Code: IA_Code,
+                    Target_AUM: Target_AUM,
+                    IA_Licensing: IA_Licensing,
+                    Household_ID: ID,
+                    Current_Total: ThisRecord.Current_Total,
+                    To_IA_Code: IA_Code,
+                    To_IA_Name: IA_Name,
+                    IA_Licensing_Assigned: IA_Licensing
+                }
+            )
+        )
+    )
+);
+
+// Step 3: Assign remaining households to the last IA if not already assigned
+ForAll(
+    Filter(colMySelectedIAHHLevelList, IsBlank(To_IA_Code)),
+    Patch(
+        colMySelectedIAHHLevelList,
+        LookUp(colMySelectedIAHHLevelList, ID = ThisRecord.ID),
+        {
+            To_IA_Code: Last(colSelectedItems).IA_Code,
+            To_IA_Name: Last(colSelectedItems).IA_Name,
+            IA_Licensing: Last(colSelectedItems).IA_Licensing
+        }
+    )
+);
+
+// Step 4: Loop through colAssigned and update colMySelectedIAHHLevelList
+ForAll(
+    colAssigned,
+    Patch(
+        colMySelectedIAHHLevelList,
+        LookUp(colMySelectedIAHHLevelList, ID = Household_ID),
+        {
+            To_IA_Code: To_IA_Code,
+            To_IA_Name: To_IA_Name,
+            IA_Licensing: IA_Licensing_Assigned,
+            Current_Total: Current_Total
+        }
+    )
+);
 
