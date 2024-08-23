@@ -1,63 +1,50 @@
-// Initialize a collection to track the cumulative totals and assignments
 ClearCollect(
-    colCumulativeAUM,
-    AddColumns(colSelectedItems, "CumulativeTotal", 0)
+    colIATotals,
+    AddColumns(
+        colSelectedItems,
+        "Running_Current_Total", 0
+    )
 );
 
-// Loop through each IA in colSelectedItems
 ForAll(
-    colSelectedItems,
-    // Loop through each household account in colMySelectedIAHHLevelList
-    ForAll(
-        Filter(colMySelectedIAHHLevelList, IsBlank(To_IA_Code)), // Consider only unassigned households
-        // Calculate the current total sum for this IA_Code
-        UpdateIf(
-            colCumulativeAUM,
-            IA_Code = ThisRecord.IA_Code,
-            {
-                CumulativeTotal: Sum(
-                    Filter(
+    colIATotals,
+    With(
+        {
+            currentIA: ThisRecord
+        },
+        ForAll(
+            Filter(
+                colMySelectedIAHHLevelList,
+                IsBlank(To_IA_Code)  // Only assign accounts that haven't been assigned yet
+            ),
+            With(
+                {
+                    updatedTotal: currentIA.Running_Current_Total + ThisRecord.Total_AUM
+                },
+                If(
+                    updatedTotal <= currentIA.Target_AUM,
+                    Patch(
                         colMySelectedIAHHLevelList,
-                        To_IA_Code = ThisRecord.IA_Code // Sum of current_total for the specific IA_Code
-                    ),
-                    Current_Total // Summing the Current_Total field
+                        ThisRecord,
+                        {
+                            To_IA_Code: currentIA.IA_Code,
+                            To_IA_Name: currentIA.IA_Name,
+                            IA_Licensing: currentIA.IA_Licensing,
+                            Running_Current_Total: updatedTotal
+                        }
+                    );
+                    Patch(
+                        colIATotals,
+                        LookUp(
+                            colIATotals,
+                            IA_Code = currentIA.IA_Code
+                        ),
+                        {
+                            Running_Current_Total: updatedTotal
+                        }
+                    )
                 )
-            }
-        );
-
-        // Retrieve the updated cumulative total
-        With(
-            {
-                currentCumulativeTotal: LookUp(colCumulativeAUM, IA_Code = ThisRecord.IA_Code).CumulativeTotal
-            },
-            // Check if currentCumulativeTotal + Current_Total is less than the Target_AUM for the IA
-            If(
-                currentCumulativeTotal + ThisRecord.Total_AUM <= LookUp(colSelectedItems, IA_Code = ThisRecord.IA_Code).Target_AUM,
-                // Assign the household to the current IA
-                Patch(
-                    colMySelectedIAHHLevelList,
-                    ThisRecord,
-                    {
-                        To_IA_Code: colSelectedItems[@IA_Code], // Assign IA_Code to household
-                        Target_Revenue: LookUp(colSelectedItems, IA_Code = ThisRecord.IA_Code).Target_AUM,  // Set Target_AUM for the household
-                        Current_Total: currentCumulativeTotal + ThisRecord.Total_AUM  // Update Current_Total
-                    }
-                );
-                // Update the cumulative total in colCumulativeAUM
-                UpdateIf(
-                    colCumulativeAUM,
-                    IA_Code = colSelectedItems[@IA_Code],
-                    {CumulativeTotal: currentCumulativeTotal + ThisRecord.Total_AUM}
-                )
-            );
-            // Exit the loop if currentCumulativeTotal + Current_Total exceeds the Target_AUM
-            If(
-                currentCumulativeTotal + ThisRecord.Total_AUM > LookUp(colSelectedItems, IA_Code = ThisRecord.IA_Code).Target_AUM,
-                Exit()
             )
         )
     )
 );
-
-// After the loops, you can use colAssignedIA to review the assignments
-Collect(colAssignedIA, colMySelectedIAHHLevelList);
